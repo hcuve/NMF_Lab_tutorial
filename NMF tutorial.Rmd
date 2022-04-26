@@ -55,7 +55,7 @@ esGolub1$gene_names<- row.names(esGolub1)
 
 
 
-Step 1 - Initialization 
+Step 1 - INITIALIZATION 
 - Specifying the seeding method
 
 ```{r}
@@ -75,10 +75,377 @@ res_100run_1seed
 # default keep the best fit over all run
 # typically 100 - 200 runs
 
-```{f}
+```{r}
+library(NMF)
+res_100run_1seed <- NMF::nmf(esGolub1[,1:38], 3, nrun = 100,
+                             .options = 'v')
+options(scipen = 999)
 
-res_100run_1seed <- NMF::nmf(esGolub1[,1:38], 3, nrun = 100, seed= 123456)
+summary(res_100run_1seed)
+
+# keep all
+res_100run_1seed_all <- NMF::nmf(esGolub1[,1:38], 3, nrun = 100,
+                             .options = list(keep.all = TRUE, 'v'))
+
+View(res_100run_1seed_all[[1]])
+View(res_100run_1seed_all[[2]])
+```
 
 
+# HOW MANY COMPONENTES = K = ?
+we will do 100 initialization for each k  = from 2 to 6 
+use seed for reproducibility
+
+```{r}
+res_k <-NMF::nmf(esGolub1[,1:38], 2:6, nrun=100, seed=123456,
+                 .options = 'v')
+# takes a bit
+# verbose
+# Compute NMF rank= 2  ... + measures ... OK
+# Compute NMF rank= 3  ... + measures ... OK
+# Compute NMF rank= 4  ... + measures ... OK
+# Compute NMF rank= 5  ... + measures ... OK
+# Compute NMF rank= 6  ... + measures ... OK
+
+
+res_k
+
+# we can plot a summary of quality measures
+
+NMF::plot(res_k) #+ geom_vline(xintercept = 3, linetype = "dashed") 
+# do 3 then 4
+
+```
+
+
+Consensus map
+
+```{r}
+# and the function consensusmap generates  heatmaps  of  the  consensus  matrix  for  each  value  of  the  rank.
+?consensusmap
+consensusmap(res_k, annCol=esGolub, labCol=NA, labRow=NA)
+
+```
+
+SHUFFLING to avoid overfitting to noise
+
+```{r}
+# shuffle original data 
+
+V.random <- randomize(esGolub1[,1:38]) 
+
+# estimate quality measures from the shuffled data (use default NMF algorithm) 
+estim.k.random <- nmf(V.random, 2:6, nrun=100, seed=123456,
+                      .option = 'v') 
+
+# Compute NMF rank= 2  ... + measures ... OK
+# Compute NMF rank= 3  ... + measures ... OK
+# Compute NMF rank= 4  ... + measures ... OK
+# Compute NMF rank= 5  ... + measures ... OK
+# Compute NMF rank= 6  ... + measures ... OK
+
+# then we can assess the quality of random estimation to our estimation
+
+# plot measures on same graph (x, y) 
+plot(res_k, estim.k.random) + geom_vline(xintercept = 3)
+
+
+```
+
+We select values of k where the magnitude of the cophenetic correlation coefficient begins to fall (see below).
+so now we can fit the final model
+
+
+```{r}
+res_k3 <-NMF::nmf(esGolub1[,1:38], r = 3, nrun = 100, seed=123456,
+                 .options = list( 'v','t')) #error tracking
+
+res_k3 <-NMF::nmf(esGolub1[,1:38], r = 3, nrun = 100, seed=123456,
+                 .options = 't') #error tracking
+plot(res_k3)
+```
+
+plotting results
+
+
+```{r}
+
+layout(cbind(1,2)) 
+
+# basis components 
+basismap(res_k3, subsetRow=TRUE) # weights/ amplitudes
+# mixture coefficients 
+coefmap(res_k3) #hidden variables
+
+# access moe info
+# res_k3
+
+```
+
+NMF on facial action activation
+
+load face data
+
+```{r}
+
+db_of_morph_study <- readRDS("~/Library/CloudStorage/OneDrive-UniversityofBirmingham/Lab meetings/NMF_tutorial/db_of_morph_study.Rds")
+
+View(db_of_morph_study)
+
+# db_of_morph_study$morph
+db_of_morph_study$Dataset
+db_of_morph_study %>%
+  subset(morph == "Original" & Dataset == "ADFES")%>%
+  ggplot(aes(timebin))+
+  geom_histogram()
+
+table(db_of_morph_study$timebin)
+
+# select only AU columns and metadata
+colnames(db_of_morph_study)
+unique(db_of_morph_study$AU01_c)
+
+db_of<- db_of_morph_study[, c(1:12,58:74)]
+
+# rename the AUS into more descriptivinfotheo::
+
+colnames(db_of)
+
+colnames(db_of)
+# separate morphs and not morphs
+db_of_morph<- subset(db_of, morph == "Morph")
+db_of_natural<- subset(db_of, morph == "Original")
+
+```
+
+we can start with an NMF that ignores the time component
+```{r}
+
+# load AU wiki
+AU_Wiki <- readxl::read_excel("AU_Wiki.xlsx")
+View(AU_Wiki)
+
+AU_Wiki$AU_Code_OF<- paste0("AU", paste0(AU_Wiki$AU_CODE), paste0("_r"))
+
+colnames(db_of_natural)
+AU_OF_codes<- colnames(db_of_natural[,13:29])
+
+as.data.frame(AU_OF_codes)
+
+AU_Wiki$AU_OF_codes<-AU_Wiki$AU_Code_OF
+
+AU_OF_codes_merged <- left_join(as.data.frame(AU_OF_codes), AU_Wiki)
+
+colnames(db_of_natural)
+
+
+# put underscores to avoid issues later
+AU_OF_codes_merged$FACS_name <- chartr(" ", "_", AU_OF_codes_merged$FACS_name)
+
+AU_OF_transposed<- t(AU_OF_codes_merged$FACS_name)
+
+```
+
+
+NMF - no temporal stuff
+```{r}
+db_of_natural1<- db_of_natural
+# change names to descriptive AUS
+AU_OF_transposed_names <-  c(paste0(colnames(db_of_natural[,1:12])),(AU_OF_transposed[1,]))
+
+names(db_of_natural1)<- AU_OF_transposed_names
+
+colnames(db_of_natural1)
+
+db_of_natural1_agg<- db_of_natural1[,c(1,4,5,13:29)]%>%
+  group_by(filename, Emotion, Dataset)%>%
+  summarise_if(is.numeric, mean, na.rm = TRUE)
+
+db_of_natural1_agg
+
+```
+
+inotialise and find k
+```{r}
+colnames(db_of_natural1_agg)
+unique(db_of_natural1_agg$Emotion)
+# single run and single numeric seed for reproducibility
+
+# db_of_natural1_agg[,2:19]+.001
+res_find_k <- nmf(db_of_natural1_agg[,3:19], 2:6, 
+                      seed=123456,
+                      nrun = 100,
+                       .options = 'v') 
+
+summary(res_find_k)
+
+NMF::plot(res_find_k)+
+  geom_vline(xintercept = 3)
+
+?NMF::consensusmap
+NMF::consensusmap(res_find_k)
+
+
+```
+randomize
+
+```{r}
+V.random_em <- randomize(db_of_natural1_agg[,3:19]) 
+
+# estimate quality measures from the shuffled data (use default NMF algorithm) 
+estim.k.random_em <- nmf(V.random_em, 2:6, nrun=100, seed=123456,
+                      .option = 'v') 
+
+# Compute NMF rank= 2  ... + measures ... OK
+# Compute NMF rank= 3  ... + measures ... OK
+# Compute NMF rank= 4  ... + measures ... OK
+# Compute NMF rank= 5  ... + measures ... OK
+# Compute NMF rank= 6  ... + measures ... OK
+
+# then we can assess the quality of random estimation to our estimation
+
+# plot measures on same graph (x, y) 
+plot(res_find_k, estim.k.random_em)+geom_vline(xintercept = 3)
+
+
+```
+
+```{r}
+res_k3_em <-NMF::nmf(db_of_natural1_agg[,4:19], r = 3, nrun = 100, seed=123456)
+
+
+layout(cbind(1,2)) 
+
+summary(res_k3_em)
+
+# basis components 
+NMF::basismap(res_k3_em) # weights/ amplitudes
+# mixture coefficients 
+coefmap(res_k3_em) #hidden variables
+
+# access moe info
+# res_k3_em
+
+
+db_of_natural1_agg$NMFtable<- as.data.frame(res_k3_em@fit@W)
+db_of_natural1_agg$comp1 = db_of_natural1_agg$NMFtable$V1
+db_of_natural1_agg$comp2 = db_of_natural1_agg$NMFtable$V2
+
+db_of_natural1_agg$comp3 = db_of_natural1_agg$NMFtable$V3
+
+colnames(db_of_natural1_agg)
+
+library(viridis)
+
+db_of_natural1_agg[,c(2,3,22:24)] %>% 
+  gather(component, coef, -Emotion, -Dataset)%>%
+  group_by(Emotion, component,Dataset)%>%
+  summarise_if(is.numeric, mean, na.rm = TRUE)%>%
+  ggplot(aes(Emotion, component, fill = coef))+
+  geom_tile()+
+  scale_fill_viridis(option="magma")+
+  theme_classic()+
+  facet_grid(~Dataset)
+
+
+
+db_of_natural1_agg[,c(2,3,22:24)] %>% 
+  gather(component, coef, -Emotion, -Dataset)%>%
+  group_by(Emotion, component,Dataset)%>%
+  ggplot(aes(Emotion, coef, , color = Emotion, fill = Emotion))+
+  geom_jitter(alpha = .1, position = position_dodge(1))+
+  stat_summary(geom = "pointrange")+
+  geom_boxplot(alpha = .1)+
+    theme_classic()+
+  facet_grid(component~Dataset)+
+  ggpubr::stat_compare_means()+
+  scale_color_brewer(palette = "Dark2")+
+  scale_fill_brewer(palette = "Dark2")
+
+
+db_of_natural1_agg[,c(2,3,22:24)] %>% 
+  gather(component, coef, -Emotion, -Dataset)%>%
+  group_by( component,Dataset)%>%
+  ggplot(aes(Dataset, coef , color = Dataset, fill = Dataset))+
+  geom_jitter(alpha = .1, position = position_dodge(1))+
+  stat_summary(geom = "pointrange")+
+  geom_boxplot(alpha = .1)+
+    theme_classic()+
+  facet_grid(~component)+
+  ggpubr::stat_compare_means()+
+  scale_color_brewer(palette = "Dark2")+
+  scale_fill_brewer(palette = "Dark2")
+
+# we can do clasification with this
+db_of_natural1_agg
+
+write_csv(db_of_natural1_agg, "db_of_natural1_agg.csv")
+```
+
+
+<!-- now for the temporal -->
+
+
+```{r}
+colnames(db_of_natural1)
+db_of_natural1$timebin
+table(is.na(db_of_natural1))
+res_k3_em_ts <-NMF::nmf(db_of_natural1[,13:29], r = 3, nrun = 100, seed=123456,
+                        .options = 'v')
+
+summary(res_k3_em_ts)
+
+NMF::coefmap(res_k3_em_ts)
+NMF::basismap(res_k3_em_ts)
+
+
+db_of_natural1$NMFtable<- as.data.frame(res_k3_em_ts@fit@W)
+db_of_natural1$comp1 = db_of_natural1$NMFtable$V1
+db_of_natural1$comp2 = db_of_natural1$NMFtable$V2
+db_of_natural1$comp3 = db_of_natural1$NMFtable$V3
+
+
+# morph
+colnames(db_of_morph)<- c(AU_OF_transposed_names,"NMFtable", "comp1", "comp2",
+                          "comp3")
+
+db_of_morph1<- 
+res_k3_em_ts_morph <-NMF::nmf(db_of_morph[,13:29], r = 3, nrun = 100, seed=123456,
+                        .options = 'v')
+
+summary(res_k3_em_ts_morph)
+
+NMF::coefmap(res_k3_em_ts_morph)
+NMF::basismap(res_k3_em_ts_morph)
+
+
+db_of_morph$NMFtable<- as.data.frame(res_k3_em_ts_morph@fit@W)
+db_of_morph$comp1 = db_of_morph$NMFtable$V1
+table(is.na(db_of_morph$comp1))
+db_of_morph$comp2 = db_of_morph$NMFtable$V2
+db_of_morph$comp3 = db_of_morph$NMFtable$V3
+
+colnames(db_of_natural1)
+bind_rows(db_of_natural1, db_of_morph)[,c(2:5,31:33)]%>%
+  gather(component, coef, -timebin,-Emotion, -Dataset, -morph)%>%
+  # group_by(component,Dataset)%>%
+  # ggplot(aes(Dataset, coef , color = Dataset, fill = Dataset))+
+  
+  ggplot(aes(timebin, coef, color = component))+
+  geom_smooth()+
+  facet_grid(Dataset~Emotion*morph)+
+  theme_classic()
+
+colnames(db_of_morph)
+
+bind_rows(db_of_natural1, db_of_morph)[,c(1,2:5,31:33)]%>%
+  # gather( component, coef, -timebin,-Emotion, -Dataset, -morph, -filename)%>%
+  group_by(filename,timebin, Emotion, Dataset, morph)%>%
+  summarise_at(c("comp1", "comp2", "comp3"), mean, na.rm = TRUE)
+
+nmf_agg_ts <- bind_rows(db_of_natural1, db_of_morph)[,c(1,2:5,31:33)]%>%
+  # gather( component, coef, -timebin,-Emotion, -Dataset, -morph, -filename)%>%
+  group_by(filename, Emotion, Dataset, morph)%>%
+  summarise_at(c("comp1", "comp2", "comp3"), mean, na.rm = TRUE)
 ```
 
