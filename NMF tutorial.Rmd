@@ -1,0 +1,84 @@
+---
+title: "NMF Tutorial"
+author: "Helio"
+date: "25/04/2022"
+output: html_document
+---
+
+# load libraries
+```{r}
+library(NMF)
+# library(bio)
+# install.packages('biobase')
+# if (!require("BiocManager", quietly = TRUE))
+#     install.packages("BiocManager")
+# BiocManager::install("Biobase")
+library(tidyverse)
+
+```
+
+
+# Load datasets
+
+
+gene expression data from Golub et al. (1999).
+Molecular Classification of Cancer: Class Discovery and Class
+Prediction by Gene Expression Monitoring"
+
+- 27 patients with acute lymphoblastic leukemia (ALL) 
+-  11 patients with acute myeloid leukemia (AML).
+- columns  - patient based on gene expression
+- rows 
+
+
+```{r}
+library(NMF)
+data(esGolub) 
+# see details of the dataset
+?esGolub
+esGolub <- esGolub[1:200,] 
+
+# get a subset of data
+esGolub1<- as.data.frame(esGolub@assayData[["exprs"]])[1:200,]
+
+esGolub1
+
+# learn about the function
+
+?NMF::nmf
+
+# store name of genes
+esGolub1$gene_names<- row.names(esGolub1)
+
+```
+
+
+
+
+Step 1 - Initialization 
+- Specifying the seeding method
+
+```{r}
+
+NMF::nmfSeed()
+# [1] "none"   "random" "ica"    "nndsvd"
+
+# single run and single numeric seed for reproducibility
+res_1run_1seed <- nmf(esGolub1[,1:38], 3, seed=123456) 
+
+summary(summary(res2))
+
+res_100run_1seed
+
+```
+# Multiple runs for stohcastic seed
+# default keep the best fit over all run
+# typically 100 - 200 runs
+
+```{f}
+
+res_100run_1seed <- NMF::nmf(esGolub1[,1:38], 3, nrun = 100, seed= 123456)
+
+
+```
+
